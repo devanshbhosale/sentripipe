@@ -1,0 +1,12 @@
+{
+  "answer": "Hi, I am <PERSON> (<EMAIL>). My order #48213 arrived damaged: the box was crushed and the charger is missing. Please arrange a replacement. You can reach me at <PHONE>.",
+  "documents": [
+    {
+      "id": "original-prompt",
+      "text": "Hi, I am Priya Sharma (priya.sharma@example.com). My order #48213 arrived damaged: the box was crushed and the charger is missing. Please arrange a replacement. You can reach me at +91 98200 12345."
+    }
+  ],
+  "question": "Does the sanitized prompt preserve the meaning of the original prompt?",
+  "threshold": 0.5,
+  "evidence": "flagged"
+}

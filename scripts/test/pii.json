@@ -1,0 +1,5 @@
+{
+  "text": "Hi, I am Priya Sharma (priya.sharma@example.com). My order #48213 arrived damaged: the box was crushed and the charger is missing. Please arrange a replacement. You can reach me at +91 98200 12345.",
+  "anonymize": "replace",
+  "threshold": 0.5
+}
