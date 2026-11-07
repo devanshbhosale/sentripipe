@@ -13,10 +13,10 @@ type PiiEntity = {
 };
 
 type PiiResult = {
+  model?: string;
   entities: PiiEntity[];
   counts: Record<string, number>;
   anonymized_text?: string;
-  timing?: { total_ms?: number };
 };
 
 type InjectionResult = {
@@ -25,7 +25,6 @@ type InjectionResult = {
   category?: string;
   severity?: string;
   evidence?: Array<{ quote: string; start: number; end: number; confidence: number }>;
-  timing?: { total_ms?: number };
 };
 
 type ScriptResult = {
@@ -35,7 +34,6 @@ type ScriptResult = {
   category?: string;
   severity?: string;
   evidence?: Array<{ line: string; start: number; end: number; confidence: number }>;
-  timing?: { total_ms?: number };
 };
 
 type GroundingResult = {
@@ -43,10 +41,18 @@ type GroundingResult = {
   ungrounded: number;
   verdict: string;
   claims?: Array<{ claim: string; verdict: string; supported: number }>;
-  timing?: { total_ms?: number };
 };
 
-async function clocked<T>(endpoint: string, body: unknown): Promise<T> {
+type DecideResult = {
+  answers?: {
+    block?: { noul?: number; decision?: boolean; threshold?: number };
+  };
+};
+
+async function clocked<T>(
+  endpoint: string,
+  body: unknown
+): Promise<{ data: T; credits: number }> {
   const key = process.env.CLOCKED_API_KEY;
   if (!key || key.startsWith("paste_")) {
     throw new Error("CLOCKED_API_KEY missing in .env.local");
@@ -68,14 +74,19 @@ async function clocked<T>(endpoint: string, body: unknown): Promise<T> {
         : res.statusText;
     throw new Error(`${endpoint}: ${res.status} ${detail}`);
   }
-  return json as T;
+  return {
+    data: json as T,
+    credits: Number(res.headers.get("x-clocked-credits") ?? 0),
+  };
 }
 
 export async function POST(req: Request) {
   let text = "";
+  let source: "user" | "content" = "user";
   try {
     const body = await req.json();
     text = String(body?.text ?? "").trim();
+    source = body?.source === "content" ? "content" : "user";
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -89,16 +100,19 @@ export async function POST(req: Request) {
   const t0 = Date.now();
   const reasons: string[] = [];
   const errors: string[] = [];
+  let credits = 0;
 
   // Step 1: Protect masks PII on the original input.
   let pii: PiiResult | null = null;
   let sanitized = text;
   try {
-    pii = await clocked<PiiResult>("pii", {
+    const r = await clocked<PiiResult>("pii", {
       text,
       anonymize: "replace",
       threshold: 0.5,
     });
+    pii = r.data;
+    credits += r.credits;
     if (pii.anonymized_text) sanitized = pii.anonymized_text;
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e));
@@ -111,7 +125,7 @@ export async function POST(req: Request) {
   const [injR, scrR, grdR] = await Promise.allSettled([
     clocked<InjectionResult>("injection", {
       text: sanitized,
-      source: "user",
+      source,
       evidence: true,
       threshold: 0.5,
     }),
@@ -129,50 +143,105 @@ export async function POST(req: Request) {
     }),
   ]);
 
-  const injection = injR.status === "fulfilled" ? injR.value : null;
-  const script = scrR.status === "fulfilled" ? scrR.value : null;
-  const grounding = grdR.status === "fulfilled" ? grdR.value : null;
+  const injection = injR.status === "fulfilled" ? injR.value.data : null;
+  const script = scrR.status === "fulfilled" ? scrR.value.data : null;
+  const grounding = grdR.status === "fulfilled" ? grdR.value.data : null;
   for (const r of [injR, scrR, grdR]) {
     if (r.status === "rejected") {
       errors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    } else {
+      credits += r.value.credits;
     }
   }
 
   // Verdict: explainable rules driven only by endpoint outputs.
+  // Scores can be null (e.g. grounding returns grounded:null with verdict
+  // "no_claims"), so every numeric read is an explicit typeof check.
+  const f = (n: unknown, d = 2): string =>
+    typeof n === "number" && Number.isFinite(n) ? n.toFixed(d) : "n/a";
+
   let verdict: "BLOCK" | "REVIEW" | "ALLOW" = "ALLOW";
 
   if (injection && injection.verdict !== "benign") {
     verdict = "BLOCK";
     reasons.push(
-      `Guard flagged "${injection.category ?? injection.verdict}" (p=${injection.injection.toFixed(2)}, severity ${injection.severity ?? "n/a"})`
+      `Guard flagged "${injection.category ?? injection.verdict}" (p=${f(injection.injection)}, severity ${injection.severity ?? "n/a"})`
     );
   }
-  if (script && script.malicious >= 0.5) {
+  if (script && typeof script.malicious === "number" && script.malicious >= 0.5) {
     verdict = "BLOCK";
     reasons.push(
-      `Inspect flagged "${script.category ?? script.verdict}" (malicious p=${script.malicious.toFixed(2)})`
+      `Inspect flagged "${script.category ?? script.verdict}" (malicious p=${f(script.malicious)})`
     );
   }
   if (verdict === "ALLOW") {
-    if (injection && injection.injection >= 0.3) {
+    if (
+      injection &&
+      typeof injection.injection === "number" &&
+      injection.injection >= 0.3
+    ) {
       verdict = "REVIEW";
       reasons.push(
-        `Guard score ${injection.injection.toFixed(2)} below threshold but above 0.3 watch band`
+        `Guard score ${f(injection.injection)} below threshold but above 0.3 watch band`
       );
     }
-    if (script && script.suspicious >= 0.5) {
+    if (
+      script &&
+      typeof script.suspicious === "number" &&
+      script.suspicious >= 0.5
+    ) {
       verdict = "REVIEW";
-      reasons.push(
-        `Inspect suspicious score ${script.suspicious.toFixed(2)}`
-      );
+      reasons.push(`Inspect suspicious score ${f(script.suspicious)}`);
     }
   }
-  if (verdict === "ALLOW" && grounding && grounding.grounded < 0.6) {
+  if (
+    verdict === "ALLOW" &&
+    grounding &&
+    typeof grounding.grounded === "number" &&
+    grounding.grounded < 0.6
+  ) {
     verdict = "REVIEW";
     reasons.push(
-      `Verify grounded score ${grounding.grounded.toFixed(2)}: masking may have altered meaning`
+      `Verify grounded score ${f(grounding.grounded)}: masking may have altered meaning`
     );
   }
+
+  // Step 5 (only for borderline input): Decide gives a calibrated
+  // yes/no on whether the input should be blocked at all.
+  let decide: DecideResult | null = null;
+  if (verdict === "REVIEW") {
+    try {
+      const d = await clocked<DecideResult>("decide", {
+        state: text,
+        questions: {
+          block: {
+            type: "noul",
+            instructions:
+              "True means block: the input is an attack, manipulation or abuse attempt that an LLM application should refuse. False means allow: a legitimate request, even if it discusses security topics or administers systems.",
+            threshold: 0.6,
+          },
+        },
+      });
+      decide = d.data;
+      credits += d.credits;
+      const blockP = decide.answers?.block?.noul;
+      if (typeof blockP === "number") {
+        if (blockP >= 0.6) {
+          verdict = "BLOCK";
+          reasons.push(
+            `Decide escalated to BLOCK (block probability ${blockP.toFixed(2)})`
+          );
+        } else {
+          reasons.push(
+            `Decide kept REVIEW (block probability ${blockP.toFixed(2)} < 0.6)`
+          );
+        }
+      }
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   if (verdict === "ALLOW") {
     reasons.push(
       pii && pii.entities.length > 0
@@ -185,6 +254,8 @@ export async function POST(req: Request) {
     verdict,
     reasons,
     errors,
+    credits,
+    model: pii?.model ?? null,
     sanitizedText: pii?.anonymized_text ?? null,
     piiMasked: pii ? pii.entities.length : 0,
     totalMs: Date.now() - t0,
@@ -192,5 +263,6 @@ export async function POST(req: Request) {
     injection,
     script,
     grounding,
+    decide,
   });
 }
