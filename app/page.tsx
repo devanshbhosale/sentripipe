@@ -328,7 +328,7 @@ export default function Home() {
   return (
     <main className="min-h-[100dvh] bg-zinc-950 text-zinc-200">
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
-        <header className="mb-10 flex flex-wrap items-baseline justify-between gap-2">
+        <header className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
             Sentri<span className="text-emerald-400">Pipe</span>
           </h1>
@@ -336,6 +336,13 @@ export default function Home() {
             pre-LLM firewall · Protect → Guard → Inspect → Verify → Decide
           </p>
         </header>
+        <p className="mb-10 max-w-2xl text-lg leading-relaxed text-zinc-400">
+          Blocks prompt injection, malicious scripts and PII{" "}
+          <span className="text-zinc-200">
+            before your model sees them.
+          </span>{" "}
+          Paste text, run the gate, read the verdict.
+        </p>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           {/* Input */}
@@ -380,10 +387,10 @@ export default function Home() {
               className="w-full resize-y rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500/60 focus:outline-none"
             />
             <div className="mt-2 flex items-center justify-between">
-              <span className="font-mono text-[11px] text-zinc-600">
+              <span className="text-[11px] text-zinc-500">
                 Guard runs with source=&quot;{source}&quot;
               </span>
-              <span className="font-mono text-[11px] text-zinc-600">
+              <span className="text-[11px] text-zinc-500">
                 {text.length} chars
               </span>
             </div>
@@ -408,7 +415,7 @@ export default function Home() {
             >
               {loading ? "Scanning..." : "Scan & gate"}
             </button>
-            <p className="mt-3 text-[11px] leading-relaxed text-zinc-600">
+            <p className="mt-3 text-xs leading-relaxed text-zinc-500">
               4 Clocked calls per scan (5 when borderline): pii first, then
               injection + script + grounding in parallel on the sanitized text,
               then Decide only for REVIEW. The API key stays server-side.
@@ -425,7 +432,7 @@ export default function Home() {
 
             {!result && !loading && !error && (
               <div className="flex h-full min-h-64 items-center justify-center rounded-lg border border-dashed border-zinc-800 p-8 text-center">
-                <p className="text-sm text-zinc-600">
+                <p className="text-sm text-zinc-500">
                   Run a scan to see the live pipeline verdict.
                 </p>
               </div>
@@ -792,7 +799,7 @@ export default function Home() {
               <h2 className="text-sm font-medium text-zinc-300">
                 Drop it in front of any LLM call
               </h2>
-              <p className="text-[11px] text-zinc-600">
+              <p className="text-xs text-zinc-500">
                 gate() returns the LLM reply for clean input, throws for blocked
                 input. Same verdict logic as this console.
               </p>
@@ -816,7 +823,7 @@ export default function Home() {
               <h2 className="text-sm font-medium text-zinc-300">
                 Adversarial eval
               </h2>
-              <p className="text-[11px] text-zinc-600">
+              <p className="text-xs text-zinc-500">
                 {EVAL_CASES.length} payloads through the full gate: {attackTotal}{" "}
                 attacks (must BLOCK, incl. indirect + encoded) and {benignTotal}{" "}
                 benign (must NOT block, incl. security-flavored false-positive
@@ -860,7 +867,7 @@ export default function Home() {
               <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900/50">
                 <table className="w-full text-left text-[11px]">
                   <thead>
-                    <tr className="border-b border-zinc-800 text-zinc-600">
+                    <tr className="border-b border-zinc-800 text-zinc-500">
                       <th className="p-3 font-medium">case</th>
                       <th className="p-3 font-medium">expected</th>
                       <th className="p-3 font-medium">got</th>
@@ -894,7 +901,7 @@ export default function Home() {
         </section>
 
         <footer className="mt-10 border-t border-zinc-800/60 pb-2 pt-4">
-          <p className="font-mono text-[11px] text-zinc-600">
+          <p className="text-xs text-zinc-500">
             Built for the Clocked Build Challenge (closes Nov 10, 11:59 PM ET).
             Endpoints: Protect, Guard, Inspect, Verify, Decide.
           </p>
